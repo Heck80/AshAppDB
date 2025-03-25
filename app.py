@@ -126,7 +126,7 @@ if "user" in st.session_state:
                         res = supabase.table("reference_samples").insert(data).execute()
                         if res.data:
                             st.success("✅ Sample successfully submitted!")
-                            st.experimental_rerun()
+                            st.rerun()
                         else:
                             st.error("⚠️ Insert failed – check your data.")
                     except Exception as e:
