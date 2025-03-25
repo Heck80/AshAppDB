@@ -149,7 +149,7 @@ if "user" in st.session_state:
                         delete_res = supabase.table("reference_samples").delete().eq("lot_number", selected_row).execute()
                         if delete_res.data:
                             st.success(f"Deleted LOT: {selected_row}")
-                            st.experimental_rerun()
+                            st.rerun()
                         else:
                             st.error("Delete failed. Check permissions or data.")
                     except Exception as e:
