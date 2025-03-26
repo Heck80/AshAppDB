@@ -9,6 +9,7 @@ st.title("📥 IntegriTEX Referenzdaten erfassen")
 # Supabase-Konfiguration
 SUPABASE_URL = st.secrets["supabase"]["url"]
 SUPABASE_KEY = st.secrets["supabase"]["key"]
+
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # 1. Benutzerregistrierung Hinweis
