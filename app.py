@@ -7,8 +7,8 @@ st.set_page_config(page_title="IntegriTEX – Referenzdaten erfassen", layout="c
 st.title("📥 IntegriTEX Referenzdaten erfassen")
 
 # Supabase-Konfiguration
-SUPABASE_URL = os.getenv("SUPABASE_URL") or st.secrets["SUPABASE_URL"]
-SUPABASE_KEY = os.getenv("SUPABASE_KEY") or st.secrets["SUPABASE_KEY"]
+SUPABASE_URL = st.secrets["supabase"]["url"]
+SUPABASE_KEY = st.secrets["supabase"]["key"]
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # 1. Benutzerregistrierung Hinweis
