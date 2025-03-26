@@ -32,7 +32,7 @@ if st.session_state.user is None:
 
 user = st.session_state.user
 access_token = st.session_state.token
-supabase = create_client(url, key, options={"global": {"headers": {"Authorization": f"Bearer {access_token}"}}})
+supabase = create_client(url, key, access_token=access_token)
 
 st.success(f"Eingeloggt als {user.email}")
 st.title("📥 Referenzdaten eingeben")
