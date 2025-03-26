@@ -6,23 +6,23 @@ from postgrest.exceptions import APIError
 st.set_page_config(page_title="IntegriTEX – Login + Datenerfassung", layout="centered")
 
 # Supabase setup
+from supabase import create_client, Client
+
 url = st.secrets["supabase"]["url"]
 key = st.secrets["supabase"]["key"]
-supabase = create_client(url, key)
+supabase: Client = create_client(url, key)
 
 # Login
-if "user" not in st.session_state:
-    st.session_state.user = None
+auth_response = supabase.auth.sign_in_with_password({
+    "email": email,
+    "password": password
+})
 
-if st.session_state.user is None:
-    st.title("🔐 Login")
-    email = st.text_input("Email")
-    password = st.text_input("Password", type="password")
-    if st.button("Login"):
-        auth_response = supabase.auth.sign_in_with_password({"email": email, "password": password})
-        if auth_response.user:
-            st.session_state.user = auth_response.user
-            st.rerun()
+# 👉 Jetzt Supabase-Client mit Session-TOKEN neu erstellen
+if auth_response.session:
+    access_token = auth_response.session.access_token
+    supabase = create_client(url, key, options={"global": {"headers": {"Authorization": f"Bearer {access_token}"}}})
+
         else:
             st.error("Login failed")
     st.stop()
