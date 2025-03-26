@@ -28,7 +28,6 @@ if auth_mode == "Login":
             st.session_state.user = auth_response.user
             st.session_state.token = auth_response.session.access_token
             st.success("✅ Login erfolgreich")
-        
         except AuthApiError:
             st.error("❌ Login fehlgeschlagen. E-Mail oder Passwort falsch?")
 
