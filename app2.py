@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import requests
@@ -23,7 +22,10 @@ def load_data():
         df = pd.DataFrame(r.json())
         for col in df.columns:
             if df[col].dtype == object:
-                df[col] = df[col].astype(str).str.strip("'")
+                try:
+                    df[col] = df[col].astype(str).str.strip("'")
+                except AttributeError:
+                    pass
         numeric_cols = [
             "true_marker_percent", "signal_count", "percent_white", "percent_black",
             "percent_denim", "percent_natural"
