@@ -3,3 +3,4 @@ supabase
 pandas
 numpy
 scikit-learn
+matplotlib
