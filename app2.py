@@ -21,15 +21,15 @@ def load_data():
     if r.status_code == 200:
         df = pd.DataFrame(r.json())
 
-        # Strip nur auf echte Strings anwenden
+        # Nur Spalten mit Textinhalt behandeln
         for col in df.columns:
             if df[col].dtype == object:
-                df[col] = df[col].astype(str).str.strip("'")
+                df[col] = df[col].astype(str)
+                if hasattr(df[col].str, "strip"):
+                    df[col] = df[col].str.strip("'")
 
-        # Alle numerisch möglichen Felder konvertieren
-        for col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="ignore")
-
+        # Versuche alle Spalten numerisch zu interpretieren, wo sinnvoll
+        df = df.apply(pd.to_numeric, errors='ignore')
         return df
     else:
         st.error("Failed to load reference data from Supabase")
