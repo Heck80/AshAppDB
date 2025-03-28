@@ -11,7 +11,7 @@ SUPABASE_URL = "https://afcpqvesmqvfzbcilffx.supabase.co"
 SUPABASE_API = f"{SUPABASE_URL}/rest/v1/reference_samples"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFmY3BxdmVzbXF2ZnpiY2lsZmZ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDI5MjI0MjAsImV4cCI6MjA1ODQ5ODQyMH0.8jJDrlUBcWtYRGyjlvnFvKDf_gn54ozzgD2diGfrFb4"
 
-@st.cache_data
+@st.cache_data(ttl=300, show_spinner="Loading data from Supabase...")
 def load_data():
     headers = {
         "apikey": SUPABASE_KEY,
@@ -20,8 +20,6 @@ def load_data():
     r = requests.get(SUPABASE_API + "?select=*", headers=headers)
     if r.status_code == 200:
         df = pd.DataFrame(r.json())
-        st.write("📦 Raw data from Supabase:", df.shape)
-        st.dataframe(df.head(10))
         for col in df.columns:
             df[col] = pd.to_numeric(df[col], errors='coerce')
         return df
@@ -30,34 +28,27 @@ def load_data():
         return pd.DataFrame()
 
 def build_fiber_models(df, signal_max_limit=1000):
-    signal_col = "signal_count"
-    target_col = "true_marker_percent"
     fiber_cols = ["percent_white", "percent_black", "percent_denim", "percent_natural"]
     models = {}
     for fiber in fiber_cols:
         subset = df[
             (df[fiber] >= 80) &
-            df[signal_col].notna() &
-            df[target_col].notna() &
-            (df[signal_col] <= signal_max_limit)
+            df["signal_count"].notna() &
+            df["true_marker_percent"].notna() &
+            (df["signal_count"] <= signal_max_limit)
         ]
-        st.write(f"📊 Data points for model '{fiber}':", len(subset))
         if len(subset) >= 3:
-            X = subset[[signal_col]]
-            y = subset[target_col]
+            X = subset[["signal_count"]]
+            y = subset["true_marker_percent"]
             model = LinearRegression().fit(X, y)
-            models[fiber] = {
-                "model": model,
-                "X": X,
-                "y": y  # needed for clipping
-            }
+            models[fiber] = {"model": model, "X": X, "y": y}
     return models
 
 def estimate_confidence_interval(model, X, y, new_x):
     residuals = y - model.predict(X)
     rmse = np.sqrt(np.mean(residuals**2))
     prediction = model.predict(np.array([[new_x]]))[0]
-    prediction = np.clip(prediction, y.min(), y.max())  # clip to real data range
+    prediction = np.clip(prediction, y.min(), y.max())
     lower = prediction - rmse
     upper = prediction + rmse
     return prediction, lower, upper, rmse
@@ -77,6 +68,12 @@ with col2:
     natural = st.number_input("Natural (%)", 0, 100, step=1)
 
 submit = st.button("🔍 Run Analysis")
+reload = st.button("🔄 Reload data from Supabase")
+
+if reload:
+    load_data.clear()
+    st.info("✅ Cache cleared – fresh data will be loaded.")
+
 total = white + black + denim + natural
 
 if submit:
@@ -90,7 +87,6 @@ if submit:
         "percent_denim": denim / 100,
         "percent_natural": natural / 100
     }
-    st.write("Weights:", weights)
 
     if total != 100:
         st.warning("⚠️ The sum of fiber percentages must equal 100%.")
@@ -99,7 +95,6 @@ if submit:
         if df.empty:
             st.stop()
 
-        # Check for exact match in reference data
         ref_match = df[
             (df["signal_count"] == signal) &
             (df["percent_white"] == white) &
@@ -107,21 +102,18 @@ if submit:
             (df["percent_denim"] == denim) &
             (df["percent_natural"] == natural)
         ]
-
         if not ref_match.empty:
             known_value = ref_match.iloc[0]["true_marker_percent"]
             st.info(f"📌 Known reference found: **{known_value:.2f}%** marker fiber content.")
-        
+
         max_plot_signal = df[df["signal_count"] <= 1000]["signal_count"].max()
         models = build_fiber_models(df, signal_max_limit=1000)
+
         if not models:
             st.error("❌ No models could be built.")
             st.stop()
 
-        st.success(f"✅ Models available for: {', '.join(models.keys())}")
-
         prediction_total = 0.0
-        total_weight = 0.0
         detailed_rows = []
 
         for fiber, weight in weights.items():
@@ -131,9 +123,7 @@ if submit:
                 X = entry["X"]
                 y = entry["y"]
                 pred, lower, upper, rmse = estimate_confidence_interval(model, X, y, signal)
-
                 prediction_total += weight * pred
-                total_weight += weight
 
                 detailed_rows.append({
                     "Fiber": fiber.replace("percent_", "").capitalize(),
@@ -157,7 +147,6 @@ if submit:
 
         fig, ax = plt.subplots(figsize=(8, 5))
         ax.set_title("Signal vs. Marker – with Regression Lines")
-
         ax.scatter(
             plot_df["signal_count"],
             plot_df["true_marker_percent"],
