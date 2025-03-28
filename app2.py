@@ -29,14 +29,19 @@ def load_data():
         st.error("❌ Failed to fetch data from Supabase.")
         return pd.DataFrame()
 
-def build_fiber_models(df):
+def build_fiber_models(df, signal_max_limit=1000):
     signal_col = "signal_count"
     target_col = "true_marker_percent"
     fiber_cols = ["percent_white", "percent_black", "percent_denim", "percent_natural"]
     models = {}
     for fiber in fiber_cols:
-        subset = df[(df[fiber] >= 80) & df[signal_col].notna() & df[target_col].notna()]
-        st.write(f"📊 Data points for '{fiber}':", len(subset))
+        subset = df[
+            (df[fiber] >= 80) &
+            df[signal_col].notna() &
+            df[target_col].notna() &
+            (df[signal_col] <= signal_max_limit)
+        ]
+        st.write(f"📊 Data points for model '{fiber}':", len(subset))
         if len(subset) >= 3:
             X = subset[[signal_col]]
             y = subset[target_col]
@@ -56,7 +61,7 @@ def estimate_confidence_interval(model, X, y, new_x):
 st.title("📊 IntegriTEX – Marker Fiber Estimation (with Confidence Intervals)")
 
 st.subheader("🔍 Input")
-signal = st.number_input("Signal (count value)", min_value=0, value=1000)
+signal = st.number_input("Signal (count value)", min_value=0, value=100)
 
 col1, col2 = st.columns(2)
 with col1:
@@ -89,7 +94,9 @@ if submit:
         if df.empty:
             st.stop()
 
-        models = build_fiber_models(df)
+        # Use real max signal to limit models and plotting
+        max_signal = df["signal_count"].max()
+        models = build_fiber_models(df, signal_max_limit=max_signal)
         if not models:
             st.error("❌ No models could be built.")
             st.stop()
@@ -103,7 +110,11 @@ if submit:
         for fiber, weight in weights.items():
             model = models.get(fiber)
             if model and weight > 0:
-                subset = df[(df[fiber] >= 80) & df["signal_count"].notna() & df["true_marker_percent"].notna()]
+                subset = df[
+                    (df[fiber] >= 80) &
+                    df["signal_count"].notna() &
+                    df["true_marker_percent"].notna()
+                ]
                 X = subset[["signal_count"]]
                 y = subset["true_marker_percent"]
                 pred, lower, upper, rmse = estimate_confidence_interval(model, X, y, signal)
@@ -120,7 +131,6 @@ if submit:
 
         st.subheader("📈 Prediction Result")
         st.success(f"Estimated Marker Fiber Content: **{prediction_total:.2f}%**")
-
         st.table(pd.DataFrame(detailed_rows))
 
         # Plot
@@ -129,20 +139,18 @@ if submit:
         fig, ax = plt.subplots(figsize=(8, 5))
         ax.set_title("Signal vs. Marker – with Regression Lines")
 
-        # Reference data
         df_plot = df[["signal_count", "true_marker_percent"]].dropna()
         ax.scatter(df_plot["signal_count"], df_plot["true_marker_percent"], alpha=0.3, label="Reference Data")
 
-        # Regression lines
-        x_range = np.linspace(df["signal_count"].min(), df["signal_count"].max(), 100)
+        x_range = np.linspace(0, max_signal * 1.1, 100)
+        ax.set_xlim(0, max_signal * 1.1)
+        ax.set_ylim(0, 120)
 
         for fiber, model in models.items():
             y_line = model.predict(x_range.reshape(-1, 1))
             ax.plot(x_range, y_line, label=fiber.replace("percent_", "").capitalize())
 
-        # Input point
         ax.scatter(signal, prediction_total, color="red", label="Your Input", zorder=10, s=80)
-
         ax.set_xlabel("Signal Count")
         ax.set_ylabel("Marker Fiber Content (%)")
         ax.grid(True)
