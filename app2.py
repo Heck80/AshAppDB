@@ -20,14 +20,13 @@ def load_data():
     r = requests.get(SUPABASE_API + "?select=*", headers=headers)
     if r.status_code == 200:
         df = pd.DataFrame(r.json())
-        st.write("📦 Rohdaten aus Supabase:", df.shape)
-        st.dataframe(df.head(10))  # Vorschau für Debug
-        # Konvertiere alle Spalten nach Möglichkeit
+        st.write("📦 Raw data from Supabase:", df.shape)
+        st.dataframe(df.head(10))
         for col in df.columns:
             df[col] = pd.to_numeric(df[col], errors='coerce')
         return df
     else:
-        st.error("❌ Fehler beim Abrufen der Daten")
+        st.error("❌ Failed to fetch data from Supabase.")
         return pd.DataFrame()
 
 def build_fiber_models(df):
@@ -37,7 +36,7 @@ def build_fiber_models(df):
     models = {}
     for fiber in fiber_cols:
         subset = df[(df[fiber] >= 80) & df[signal_col].notna() & df[target_col].notna()]
-        st.write(f"📊 Datenpunkte für Modell '{fiber}':", len(subset))
+        st.write(f"📊 Data points for '{fiber}':", len(subset))
         if len(subset) >= 3:
             X = subset[[signal_col]]
             y = subset[target_col]
@@ -45,21 +44,18 @@ def build_fiber_models(df):
             models[fiber] = model
     return models
 
-def predict_weighted(signal_value, weights, models):
-    prediction = 0.0
-    used_fibers = []
-    for fiber, weight in weights.items():
-        model = models.get(fiber)
-        if model and weight > 0:
-            pred = model.predict(np.array([[signal_value]]))[0]
-            prediction += weight * pred
-            used_fibers.append(fiber)
-    return prediction, used_fibers
+def estimate_confidence_interval(model, X, y, new_x):
+    residuals = y - model.predict(X)
+    rmse = np.sqrt(np.mean(residuals**2))
+    prediction = model.predict(np.array([[new_x]]))[0]
+    lower = prediction - rmse
+    upper = prediction + rmse
+    return prediction, lower, upper, rmse
 
-# App UI
-st.title("📊 IntegriTEX – Marker Fiber Estimation (Debug-Modus)")
+# UI
+st.title("📊 IntegriTEX – Marker Fiber Estimation (with Confidence Intervals)")
 
-st.subheader("🔍 Eingabe")
+st.subheader("🔍 Input")
 signal = st.number_input("Signal (count value)", min_value=0, value=1000)
 
 col1, col2 = st.columns(2)
@@ -70,54 +66,85 @@ with col2:
     denim = st.number_input("Denim (%)", 0, 100, step=1)
     natural = st.number_input("Natural (%)", 0, 100, step=1)
 
-submit = st.button("🔍 Analyse starten")
-
+submit = st.button("🔍 Run Analysis")
 total = white + black + denim + natural
+
 if submit:
-    st.subheader("🧾 Eingabeübersicht")
+    st.subheader("🧾 Input Summary")
     st.write("Signal:", signal)
-    st.write("Gesamte Faserblend:", total, "%")
+    st.write("Total Fiber Blend:", total, "%")
+
     weights = {
         "percent_white": white / 100,
         "percent_black": black / 100,
         "percent_denim": denim / 100,
         "percent_natural": natural / 100
     }
-    st.write("Gewichtete Eingaben:", weights)
+    st.write("Weights:", weights)
 
     if total != 100:
-        st.warning("⚠️ Bitte stelle sicher, dass die Summe der Fasern genau 100 % ergibt.")
+        st.warning("⚠️ The sum of fiber percentages must equal 100%.")
     else:
         df = load_data()
         if df.empty:
-            st.error("❌ Keine Daten geladen.")
             st.stop()
 
         models = build_fiber_models(df)
         if not models:
-            st.error("❌ Keine Modelle konnten erstellt werden.")
+            st.error("❌ No models could be built.")
             st.stop()
 
-        st.success(f"✅ Modelle erfolgreich erstellt für: {', '.join(models.keys())}")
+        st.success(f"✅ Models available for: {', '.join(models.keys())}")
 
-        prediction, used_fibers = predict_weighted(signal, weights, models)
+        prediction_total = 0.0
+        total_weight = 0.0
+        detailed_rows = []
 
-        if not used_fibers:
-            st.warning("⚠️ Es wurden keine gültigen Modelle für deine Eingabe gefunden.")
-            st.stop()
+        for fiber, weight in weights.items():
+            model = models.get(fiber)
+            if model and weight > 0:
+                subset = df[(df[fiber] >= 80) & df["signal_count"].notna() & df["true_marker_percent"].notna()]
+                X = subset[["signal_count"]]
+                y = subset["true_marker_percent"]
+                pred, lower, upper, rmse = estimate_confidence_interval(model, X, y, signal)
 
-        st.success(f"📈 Geschätzter Marker-Faseranteil: **{prediction:.2f}%**")
-        st.caption(f"(Basierend auf: {', '.join(used_fibers)})")
+                prediction_total += weight * pred
+                total_weight += weight
+
+                detailed_rows.append({
+                    "Fiber": fiber.replace("percent_", "").capitalize(),
+                    "Weight": f"{weight*100:.0f} %",
+                    "Prediction": f"{pred:.2f} %",
+                    "Confidence ±": f"{rmse:.2f}"
+                })
+
+        st.subheader("📈 Prediction Result")
+        st.success(f"Estimated Marker Fiber Content: **{prediction_total:.2f}%**")
+
+        st.table(pd.DataFrame(detailed_rows))
 
         # Plot
-        st.subheader("📉 Visualisierung")
-        df_plot = df[["signal_count", "true_marker_percent"]].dropna()
+        st.subheader("📉 Visualization")
+
         fig, ax = plt.subplots(figsize=(8, 5))
-        ax.scatter(df_plot["signal_count"], df_plot["true_marker_percent"], alpha=0.4, label="Referenzdaten")
-        ax.scatter(signal, prediction, color="red", label="Dein Wert", zorder=10)
+        ax.set_title("Signal vs. Marker – with Regression Lines")
+
+        # Reference data
+        df_plot = df[["signal_count", "true_marker_percent"]].dropna()
+        ax.scatter(df_plot["signal_count"], df_plot["true_marker_percent"], alpha=0.3, label="Reference Data")
+
+        # Regression lines
+        x_range = np.linspace(df["signal_count"].min(), df["signal_count"].max(), 100)
+
+        for fiber, model in models.items():
+            y_line = model.predict(x_range.reshape(-1, 1))
+            ax.plot(x_range, y_line, label=fiber.replace("percent_", "").capitalize())
+
+        # Input point
+        ax.scatter(signal, prediction_total, color="red", label="Your Input", zorder=10, s=80)
+
         ax.set_xlabel("Signal Count")
         ax.set_ylabel("Marker Fiber Content (%)")
-        ax.set_title("Signal vs. Marker")
-        ax.legend()
         ax.grid(True)
+        ax.legend()
         st.pyplot(fig)
