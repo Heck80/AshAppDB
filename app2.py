@@ -17,17 +17,17 @@ def load_data():
         "apikey": SUPABASE_KEY,
         "Authorization": f"Bearer {SUPABASE_KEY}"
     }
-    r = requests.get(SUPABASE_API, headers=headers)
+    r = requests.get(SUPABASE_API + "?select=*", headers=headers)
     if r.status_code == 200:
         df = pd.DataFrame(r.json())
+        st.write("📦 Rohdaten aus Supabase:", df.shape)
+        st.dataframe(df.head(10))  # Vorschau für Debug
+        # Konvertiere alle Spalten nach Möglichkeit
         for col in df.columns:
-            if df[col].dtype == object:
-                df[col] = df[col].astype(str).str.strip("'")
-        for col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
-        return df.dropna(subset=["signal_count", "true_marker_percent"])
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+        return df
     else:
-        st.error("❌ Failed to load reference data from Supabase")
+        st.error("❌ Fehler beim Abrufen der Daten")
         return pd.DataFrame()
 
 def build_fiber_models(df):
@@ -36,7 +36,8 @@ def build_fiber_models(df):
     fiber_cols = ["percent_white", "percent_black", "percent_denim", "percent_natural"]
     models = {}
     for fiber in fiber_cols:
-        subset = df[(df[fiber] >= 80)]
+        subset = df[(df[fiber] >= 80) & df[signal_col].notna() & df[target_col].notna()]
+        st.write(f"📊 Datenpunkte für Modell '{fiber}':", len(subset))
         if len(subset) >= 3:
             X = subset[[signal_col]]
             y = subset[target_col]
@@ -55,16 +56,10 @@ def predict_weighted(signal_value, weights, models):
             used_fibers.append(fiber)
     return prediction, used_fibers
 
-# UI
-st.title("📊 IntegriTEX – Marker Fiber Estimation (Weighted Linear Model)")
+# App UI
+st.title("📊 IntegriTEX – Marker Fiber Estimation (Debug-Modus)")
 
-with st.expander("ℹ️ Help"):
-    st.markdown("""
-    Estimate the marker fiber content in a textile sample using a signal count and fiber composition (White, Black, Denim, Natural).
-    This version uses a weighted linear regression based on fiber-specific models.
-    """)
-
-st.subheader("🔍 Input")
+st.subheader("🔍 Eingabe")
 signal = st.number_input("Signal (count value)", min_value=0, value=1000)
 
 col1, col2 = st.columns(2)
@@ -75,58 +70,54 @@ with col2:
     denim = st.number_input("Denim (%)", 0, 100, step=1)
     natural = st.number_input("Natural (%)", 0, 100, step=1)
 
-submit = st.button("🔍 Run Analysis")
+submit = st.button("🔍 Analyse starten")
 
 total = white + black + denim + natural
 if submit:
-    st.subheader("📥 Input Summary")
+    st.subheader("🧾 Eingabeübersicht")
     st.write("Signal:", signal)
-    st.write("Fiber Blend Total:", total, "%")
+    st.write("Gesamte Faserblend:", total, "%")
     weights = {
         "percent_white": white / 100,
         "percent_black": black / 100,
         "percent_denim": denim / 100,
         "percent_natural": natural / 100
     }
-    st.write("Weights:", weights)
+    st.write("Gewichtete Eingaben:", weights)
 
     if total != 100:
-        st.warning(f"⚠️ Fiber blend total is {total}%. Please adjust to 100%.")
+        st.warning("⚠️ Bitte stelle sicher, dass die Summe der Fasern genau 100 % ergibt.")
     else:
         df = load_data()
-        st.write("📦 Loaded reference data:", df.shape)
         if df.empty:
-            st.error("❌ Reference data could not be loaded or is empty.")
+            st.error("❌ Keine Daten geladen.")
             st.stop()
-
-        # Optional: Show preview
-        with st.expander("🧾 Preview Reference Data"):
-            st.dataframe(df.head(10))
 
         models = build_fiber_models(df)
         if not models:
-            st.error("❌ No regression models could be built. Check your reference data (need ≥3 samples with ≥80% fiber).")
+            st.error("❌ Keine Modelle konnten erstellt werden.")
             st.stop()
 
-        st.success(f"✅ Built models for: {', '.join(models.keys())}")
+        st.success(f"✅ Modelle erfolgreich erstellt für: {', '.join(models.keys())}")
 
         prediction, used_fibers = predict_weighted(signal, weights, models)
 
         if not used_fibers:
-            st.warning("⚠️ None of the selected fiber types have valid models for prediction.")
+            st.warning("⚠️ Es wurden keine gültigen Modelle für deine Eingabe gefunden.")
             st.stop()
 
-        st.success(f"📈 Estimated Marker Fiber Content: **{prediction:.2f}%**")
-        st.caption(f"(Based on weighted linear regression using: {', '.join(used_fibers)})")
+        st.success(f"📈 Geschätzter Marker-Faseranteil: **{prediction:.2f}%**")
+        st.caption(f"(Basierend auf: {', '.join(used_fibers)})")
 
-        st.subheader("🧭 Visualization")
+        # Plot
+        st.subheader("📉 Visualisierung")
         df_plot = df[["signal_count", "true_marker_percent"]].dropna()
         fig, ax = plt.subplots(figsize=(8, 5))
-        ax.scatter(df_plot["signal_count"], df_plot["true_marker_percent"], alpha=0.4, label="Reference Data")
-        ax.scatter(signal, prediction, color="red", label="Your Input", zorder=10)
+        ax.scatter(df_plot["signal_count"], df_plot["true_marker_percent"], alpha=0.4, label="Referenzdaten")
+        ax.scatter(signal, prediction, color="red", label="Dein Wert", zorder=10)
         ax.set_xlabel("Signal Count")
         ax.set_ylabel("Marker Fiber Content (%)")
-        ax.set_title("Signal vs. Marker Content")
+        ax.set_title("Signal vs. Marker")
         ax.legend()
         ax.grid(True)
         st.pyplot(fig)
