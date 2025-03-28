@@ -1,0 +1,1 @@
+<Der vollständige, funktionierende App-Code aus vorheriger Änderung kommt gleich rein>
