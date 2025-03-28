@@ -20,14 +20,16 @@ def load_data():
     r = requests.get(SUPABASE_API, headers=headers)
     if r.status_code == 200:
         df = pd.DataFrame(r.json())
+
+        # Strip nur auf echte Strings anwenden
         for col in df.columns:
             if df[col].dtype == object:
-                try:
-                    df[col] = df[col].astype(str).str.strip("'")
-                except AttributeError:
-                    pass
+                df[col] = df[col].astype(str).str.strip("'")
+
+        # Alle numerisch möglichen Felder konvertieren
         for col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="ignore")
+
         return df
     else:
         st.error("Failed to load reference data from Supabase")
