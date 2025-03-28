@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import requests
@@ -33,14 +32,16 @@ def build_fiber_models(df):
     target_col = "true_marker_percent"
     fiber_cols = ["percent_white", "percent_black", "percent_denim", "percent_natural"]
     models = {}
+    available = {}
     for fiber in fiber_cols:
         subset = df[(df[fiber] >= 80) & df[signal_col].notna() & df[target_col].notna()]
+        available[fiber] = len(subset)
         if len(subset) >= 3:
             X = subset[[signal_col]]
             y = subset[target_col]
             model = LinearRegression().fit(X, y)
             models[fiber] = model
-    return models
+    return models, available
 
 def predict_weighted(signal_value, weights, models):
     prediction = 0.0
@@ -79,27 +80,39 @@ if submit:
     else:
         df = load_data()
         if not df.empty:
-            models = build_fiber_models(df)
-            weights = {
-                "percent_white": white / 100,
-                "percent_black": black / 100,
-                "percent_denim": denim / 100,
-                "percent_natural": natural / 100
+            models, availability = build_fiber_models(df)
+            used_fibers = {
+                "percent_white": white,
+                "percent_black": black,
+                "percent_denim": denim,
+                "percent_natural": natural
             }
-            prediction = predict_weighted(signal, weights, models)
-            st.success(f"📈 Estimated Marker Fiber Content: **{prediction:.2f}%**")
-            st.caption("(Based on weighted linear regression models per fiber type)")
+            weights = {k: v / 100 for k, v in used_fibers.items()}
 
-            st.subheader("🧭 Visualization")
-            df_plot = df[["signal_count", "true_marker_percent"]].dropna()
-            fig, ax = plt.subplots(figsize=(8, 5))
-            ax.scatter(df_plot["signal_count"], df_plot["true_marker_percent"], alpha=0.4, label="Reference Data")
-            ax.scatter(signal, prediction, color="red", label="Your Input", zorder=10)
-            ax.set_xlabel("Signal Count")
-            ax.set_ylabel("Marker Fiber Content (%)")
-            ax.set_title("Signal vs. Marker Content")
-            ax.legend()
-            ax.grid(True)
-            st.pyplot(fig)
+            st.subheader("🧪 Available Models")
+            for fiber, count in availability.items():
+                if count >= 3:
+                    st.markdown(f"✅ **{fiber.replace('percent_', '').capitalize()}**: {count} reference samples")
+                else:
+                    st.markdown(f"⚠️ **{fiber.replace('percent_', '').capitalize()}**: only {count} samples – model not used")
+
+            if any(f in models for f in weights if weights[f] > 0):
+                prediction = predict_weighted(signal, weights, models)
+                st.success(f"📈 Estimated Marker Fiber Content: **{prediction:.2f}%**")
+                st.caption("(Based on weighted linear regression models per fiber type)")
+
+                st.subheader("🧭 Visualization")
+                df_plot = df[["signal_count", "true_marker_percent"]].dropna()
+                fig, ax = plt.subplots(figsize=(8, 5))
+                ax.scatter(df_plot["signal_count"], df_plot["true_marker_percent"], alpha=0.4, label="Reference Data")
+                ax.scatter(signal, prediction, color="red", label="Your Input", zorder=10)
+                ax.set_xlabel("Signal Count")
+                ax.set_ylabel("Marker Fiber Content (%)")
+                ax.set_title("Signal vs. Marker Content")
+                ax.legend()
+                ax.grid(True)
+                st.pyplot(fig)
+            else:
+                st.warning("No valid fiber models could be built for the given blend. Please check reference data.")
         else:
-            st.error("No valid reference data found.")
+            st.error("Reference data is empty or could not be loaded.")
