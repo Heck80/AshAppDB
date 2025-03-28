@@ -46,19 +46,24 @@ def build_fiber_models(df, signal_max_limit=1000):
             X = subset[[signal_col]]
             y = subset[target_col]
             model = LinearRegression().fit(X, y)
-            models[fiber] = model
+            models[fiber] = {
+                "model": model,
+                "X": X,
+                "y": y  # needed for clipping
+            }
     return models
 
 def estimate_confidence_interval(model, X, y, new_x):
     residuals = y - model.predict(X)
     rmse = np.sqrt(np.mean(residuals**2))
     prediction = model.predict(np.array([[new_x]]))[0]
+    prediction = np.clip(prediction, y.min(), y.max())  # clip to real data range
     lower = prediction - rmse
     upper = prediction + rmse
     return prediction, lower, upper, rmse
 
 # UI
-st.title("📊 IntegriTEX – Marker Fiber Estimation (with Confidence Intervals)")
+st.title("📊 IntegriTEX – Marker Fiber Estimation")
 
 st.subheader("🔍 Input")
 signal = st.number_input("Signal (count value)", min_value=0, value=100)
@@ -94,10 +99,21 @@ if submit:
         if df.empty:
             st.stop()
 
-        # Use real max signal (filtered) to limit models and plotting
+        # Check for exact match in reference data
+        ref_match = df[
+            (df["signal_count"] == signal) &
+            (df["percent_white"] == white) &
+            (df["percent_black"] == black) &
+            (df["percent_denim"] == denim) &
+            (df["percent_natural"] == natural)
+        ]
+
+        if not ref_match.empty:
+            known_value = ref_match.iloc[0]["true_marker_percent"]
+            st.info(f"📌 Known reference found: **{known_value:.2f}%** marker fiber content.")
+        
         max_plot_signal = df[df["signal_count"] <= 1000]["signal_count"].max()
         models = build_fiber_models(df, signal_max_limit=1000)
-
         if not models:
             st.error("❌ No models could be built.")
             st.stop()
@@ -109,16 +125,11 @@ if submit:
         detailed_rows = []
 
         for fiber, weight in weights.items():
-            model = models.get(fiber)
-            if model and weight > 0:
-                subset = df[
-                    (df[fiber] >= 80) &
-                    df["signal_count"].notna() &
-                    df["true_marker_percent"].notna() &
-                    (df["signal_count"] <= 1000)
-                ]
-                X = subset[["signal_count"]]
-                y = subset["true_marker_percent"]
+            entry = models.get(fiber)
+            if entry and weight > 0:
+                model = entry["model"]
+                X = entry["X"]
+                y = entry["y"]
                 pred, lower, upper, rmse = estimate_confidence_interval(model, X, y, signal)
 
                 prediction_total += weight * pred
@@ -138,7 +149,6 @@ if submit:
         # Plot
         st.subheader("📉 Visualization")
 
-        # Filtered reference data
         plot_df = df[
             df["signal_count"].notna() &
             df["true_marker_percent"].notna() &
@@ -159,8 +169,10 @@ if submit:
         ax.set_xlim(0, max_plot_signal * 1.1)
         ax.set_ylim(0, 120)
 
-        for fiber, model in models.items():
+        for fiber, entry in models.items():
+            model = entry["model"]
             y_line = model.predict(x_range.reshape(-1, 1))
+            y_line = np.clip(y_line, entry["y"].min(), entry["y"].max())
             ax.plot(x_range, y_line, label=fiber.replace("percent_", "").capitalize())
 
         ax.scatter(signal, prediction_total, color="red", label="Your Input", zorder=10, s=80)
