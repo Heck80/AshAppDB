@@ -20,14 +20,6 @@ def load_data():
     r = requests.get(SUPABASE_API, headers=headers)
     if r.status_code == 200:
         df = pd.DataFrame(r.json())
-
-        # Nur Spalten mit Textinhalt behandeln
-        for col in df.columns:
-            if df[col].dtype == object:
-                df[col] = df[col].astype(str)
-                if hasattr(df[col].str, "strip"):
-                    df[col] = df[col].str.strip("'")
-
         # Versuche alle Spalten numerisch zu interpretieren, wo sinnvoll
         df = df.apply(pd.to_numeric, errors='ignore')
         return df
