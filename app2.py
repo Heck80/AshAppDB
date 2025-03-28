@@ -9,7 +9,7 @@ st.set_page_config(page_title="IntegriTEX – Analysis", layout="centered")
 
 SUPABASE_URL = "https://afcpqvesmqvfzbcilffx.supabase.co"
 SUPABASE_API = f"{SUPABASE_URL}/rest/v1/reference_samples"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFmY3BxdmVzbXF2ZnpiY2lsZmZ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDI5MjI0MjAsImV4cCI6MjA1ODQ5ODQyMH0.8jJDrlUBcWtYRGyjlvnFvKDf_gn54ozzgD2diGfrFb4"
 
 @st.cache_data
 def load_data():
