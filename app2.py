@@ -27,6 +27,16 @@ def load_data():
         st.error("❌ Failed to fetch data from Supabase.")
         return pd.DataFrame()
  
+def determine_dominant_fiber(row):
+    """Determine which fiber type has the highest percentage in a sample"""
+    fibers = {
+        'percent_white': row['percent_white'],
+        'percent_black': row['percent_black'],
+        'percent_denim': row['percent_denim'],
+        'percent_natural': row['percent_natural']
+    }
+    return max(fibers.items(), key=lambda x: x[1])[0]
+ 
 def build_fiber_models(df, signal_max_limit=1000):
     fiber_cols = ["percent_white", "percent_black", "percent_denim", "percent_natural"]
     models = {}
@@ -38,8 +48,8 @@ def build_fiber_models(df, signal_max_limit=1000):
             (df["signal_count"] <= signal_max_limit)
         ]
         if len(subset) >= 3:
-            X = subset[["true_marker_percent"]]  # Changed to use marker % as independent variable
-            y = subset["signal_count"]          # Signal count is now the dependent variable
+            X = subset[["true_marker_percent"]]
+            y = subset["signal_count"]
             model = LinearRegression().fit(X, y)
             models[fiber] = {"model": model, "X": X, "y": y}
     return models
@@ -95,6 +105,8 @@ if submit:
         if df.empty:
             st.stop()
  
+        # Add dominant fiber type to dataframe for coloring points
+        df['dominant_fiber'] = df.apply(determine_dominant_fiber, axis=1)
         ref_match = df[
             (df["signal_count"] == signal) &
             (df["percent_white"] == white) &
@@ -129,9 +141,11 @@ if submit:
                     "Fiber": fiber.replace("percent_", "").capitalize(),
                     "Weight": f"{weight*100:.0f} %",
                     "Predicted Signal": f"{pred:.0f} counts",
-                    "Confidence (±)": f"{rmse:.0f} counts"  # Added units
+                    "Confidence (±)": f"{rmse:.0f} counts"
                 })
  
+        # Clip the final prediction between 0% and 100%
+        prediction_total = np.clip(prediction_total, 0, 100)
         st.subheader("📈 Prediction Result")
         st.success(f"Estimated Marker Fiber Content: **{prediction_total:.2f}%**")
         st.table(pd.DataFrame(detailed_rows))
@@ -145,30 +159,63 @@ if submit:
             (df["signal_count"] <= 1000)
         ]
  
-        fig, ax = plt.subplots(figsize=(8, 5))
-        ax.set_title("Marker Fiber Content vs. Signal Count")
-        # Swapped X and Y axes
-        ax.scatter(
-            plot_df["true_marker_percent"],
-            plot_df["signal_count"],
-            alpha=0.3,
-            label="Reference Data"
-        )
+        # Create color mapping for fibers
+        fiber_colors = {
+            "percent_white": "blue",
+            "percent_black": "black",
+            "percent_denim": "green",
+            "percent_natural": "orange"
+        }
  
-        x_range = np.linspace(0, 100, 100)  # Marker % range (0-100%)
+        fig, ax = plt.subplots(figsize=(10, 6))
+        ax.set_title("Marker Fiber Content vs. Signal Count")
+        # Plot points with colors matching their dominant fiber
+        for fiber, color in fiber_colors.items():
+            fiber_data = plot_df[plot_df['dominant_fiber'] == fiber]
+            if not fiber_data.empty:
+                ax.scatter(
+                    fiber_data["true_marker_percent"],
+                    fiber_data["signal_count"],
+                    alpha=0.5,
+                    color=color,
+                    label=fiber.replace("percent_", "").capitalize() + " samples",
+                    s=40  # Smaller size for data points
+                )
+ 
+        x_range = np.linspace(0, 100, 100)
         ax.set_xlim(0, 100)
         ax.set_ylim(0, max_plot_signal * 1.1)
  
+        # Plot regression lines with matching colors
         for fiber, entry in models.items():
             model = entry["model"]
             y_line = model.predict(x_range.reshape(-1, 1))
             y_line = np.clip(y_line, entry["y"].min(), entry["y"].max())
-            ax.plot(x_range, y_line, label=fiber.replace("percent_", "").capitalize())
+            ax.plot(
+                x_range, 
+                y_line, 
+                color=fiber_colors[fiber],
+                linestyle='--',
+                linewidth=2,
+                label=fiber.replace("percent_", "").capitalize() + " regression"
+            )
  
-        ax.scatter(prediction_total, signal, color="red", label="Your Input", zorder=10, s=80)
+        # Plot user input point with distinct style
+        ax.scatter(
+            prediction_total, 
+            signal, 
+            color="red", 
+            marker="*",  # Star marker
+            s=200,      # Larger size
+            edgecolor='black',
+            linewidth=1,
+            label="Your Input",
+            zorder=10
+        )
  
-        ax.set_xlabel("Marker Fiber Content (%)")  # Swapped labels
-        ax.set_ylabel("Signal Count (counts)")    # Swapped labels
-        ax.grid(True)
-        ax.legend()
+        ax.set_xlabel("Marker Fiber Content (%)")
+        ax.set_ylabel("Signal Count (counts)")
+        ax.grid(True, alpha=0.3)
+        ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+        plt.tight_layout()
         st.pyplot(fig)
