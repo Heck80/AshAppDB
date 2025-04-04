@@ -8,8 +8,8 @@ from sklearn.linear_model import LinearRegression
 st.set_page_config(page_title="IntegriTEX – Analysis", layout="centered")
 
 SUPABASE_URL = "https://afcpqvesmqvfzbcilffx.supabase.co"
-SUPABASE_API = f"https://afcpqvesmqvfzbcilffx.supabase.co/rest/v1/reference_samples"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+SUPABASE_API = f"{SUPABASE_URL}/rest/v1/reference_samples"
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFmY3BxdmVzbXF2ZnpiY2lsZmZ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDI5MjI0MjAsImV4cCI6MjA1ODQ5ODQyMH0.8jJDrlUBcWtYRGyjlvnFvKDf_gn54ozzgD2diGfrFb4"  # <-- Hier vollständigen anon-API-Key einsetzen
 
 @st.cache_data(ttl=300, show_spinner="Loading data from Supabase...")
 def load_data():
@@ -18,13 +18,16 @@ def load_data():
         "Authorization": f"Bearer {SUPABASE_KEY}"
     }
     r = requests.get(SUPABASE_API + "?select=*", headers=headers)
+
     if r.status_code == 200:
         df = pd.DataFrame(r.json())
         for col in df.columns:
             df[col] = pd.to_numeric(df[col], errors='coerce')
         return df
     else:
-        st.error("❌ Failed to fetch data from Supabase.")
+        # ✅ Verbesserte Fehlerausgabe
+        st.error(f"❌ Supabase request failed. Status code: {r.status_code}")
+        st.text(f"Response text: {r.text}")
         return pd.DataFrame()
 
 def determine_dominant_fiber(row):
@@ -187,7 +190,6 @@ if submit:
                 label=fiber.replace("percent_", "").capitalize() + " regression"
             )
 
-        # Input-Punkt
         ax.scatter(
             prediction_total, 
             signal, 
