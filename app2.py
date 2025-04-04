@@ -8,7 +8,7 @@ from sklearn.linear_model import LinearRegression
 st.set_page_config(page_title="IntegriTEX – Analysis", layout="centered")
 
 SUPABASE_URL = "https://afcpqvesmqvfzbcilffx.supabase.co"
-SUPABASE_API = f"{SUPABASE_URL}/rest/v1/reference_samples"
+SUPABASE_API = f"https://afcpqvesmqvfzbcilffx.supabase.co/rest/v1/reference_samples"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
 
 @st.cache_data(ttl=300, show_spinner="Loading data from Supabase...")
